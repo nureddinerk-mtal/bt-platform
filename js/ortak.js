@@ -176,10 +176,19 @@ export function ekGorev(e) {
 }
 // Ek görev bu öğrenciye mi? (grup verilmişse sadece o grup)
 export function ekGorevKime(g, ogr) { return !g.ek || !g.ek.hedef_grup || (ogr && ogr.grup === g.ek.hedef_grup); }
+// Görev kimliği kalıcıdır ve kitaba bağlıdır (U1.2, SS-s24, BONUS-H04, EK-xxxxxx).
+// Öğrencinin gördüğü etiket (G1, Ö1, EK1, ⭐) sayfadaki sıraya göre burada verilir.
+export const bonusMu = id => /^BONUS/.test(String(id || ''));
 export function gorevListesi(ic, ekler) {
-  const l = (ic && ic.gorevler ? ic.gorevler.slice() : []);
+  const l = (ic && ic.gorevler ? ic.gorevler.map(g => Object.assign({}, g)) : []);
   (ekler || []).forEach(e => l.push(ekGorev(e)));
-  if (ic && ic.bonus) l.push({ id: 'BONUS', baslik: '⭐ Bonus · ' + ic.bonus.baslik, adimlar: [ic.bonus.metin], kanit: ic.bonus.kanit || 'Yaptığın çalışmanın ekran görüntüsü.', medya: ic.bonus.medya, bonus: true });
+  if (ic && ic.bonus) {
+    const b = ic.bonus, adim = b.adimlar && b.adimlar.length;
+    l.push({ id: b.id || 'BONUS', baslik: b.baslik, aciklama: adim ? b.metin : '', adimlar: adim ? b.adimlar : [b.metin], kaynak: b.kaynak,
+      kanit: b.kanit || 'Yaptığın çalışmanın ekran görüntüsü.', medya: b.medya, bonus: true });
+  }
+  let gn = 0, on = 0, en = 0;
+  l.forEach(g => { g.etiket = g.bonus ? '⭐' : g.ek ? 'EK' + (++en) : g.tur === 'odev' ? 'Ö' + (++on) : 'G' + (++gn); });
   return l;
 }
 
@@ -212,7 +221,7 @@ const CIZ = {
 export function semaHtml(t) {
   const l = t.sema ? (Array.isArray(t.sema) ? t.sema : [t.sema]) : [];
   let h = l.map(s => CIZ[s.tur] ? '<div class="sema">' + CIZ[s.tur](s) + '</div>' : '').join('');
-  if (t.not) h += '<div class="sema-not">✏️ ' + bicim(t.not) + '</div>';
+  if (t.not) h += '<div class="sema-not">✏️ Deftere yaz: ' + bicim(String(t.not).replace(/^Deftere yaz:\s*/i, '')) + '</div>';
   return h;
 }
 
