@@ -1,5 +1,5 @@
 /* Dersler, ders sayfası, teslim, inceleme, sınıf durumu, içerik düzenleme */
-import { sb, S, $, $$, esc, bicim, q, tost, hata, modal, modalKapat, ogretmen, yonetici, moderator, ders, guzelAd, adi, DURUM_AD, DURUM_IKON, tarihYaz, once, kalanYaz, gorevListesi, ekGorevKime, sinifOgrencileri, haftaSonTeslim, semaHtml, imzaliUrl, dosyaYukle, dosyaSec, gorselKucult, guvenliAd, secenekler, formVeri, csvIndir } from './ortak.js';
+import { sb, S, $, $$, esc, bicim, q, tost, hata, modal, modalKapat, ogretmen, yonetici, moderator, ders, guzelAd, adi, DURUM_AD, DURUM_IKON, tarihYaz, once, kalanYaz, gorevListesi, ekGorevKime, bonusMu, sinifOgrencileri, haftaSonTeslim, semaHtml, imzaliUrl, dosyaYukle, dosyaSec, gorselKucult, guvenliAd, secenekler, formVeri, csvIndir } from './ortak.js';
 import { KAYIT_ADRESI } from './ayar.js';
 
 /* ================= DERS LİSTESİ ================= */
@@ -28,7 +28,7 @@ async function dersSayfasi(el, kod, hafta, odakGorev) {
   const hs = await q(sb.from('hafta_icerik').select('hafta,yayinda').eq('ders_kodu', kod).order('hafta'));
   if (!hafta) hafta = (hs.filter(x => x.hafta <= S.hafta).pop() || hs[hs.length - 1] || {}).hafta;
   if (!hafta) { el.innerHTML = '<a class="btn kucuk" href="#/dersler">← Dersler</a><div class="kart" style="margin-top:12px">Bu ders için henüz içerik yok.</div>'; return; }
-  const [kayit, ogr, materyal, odevler, teslimler, istisna, ekler] = await Promise.all([
+  const [kayit, ogr, materyal, odevler, teslimler, istisna, ekler, kitap] = await Promise.all([
     q(sb.from('hafta_icerik').select('*').eq('ders_kodu', kod).eq('hafta', hafta).maybeSingle()),
     o ? q(sb.from('hafta_ogretmen').select('*').eq('ders_kodu', kod).eq('hafta', hafta).maybeSingle()) : null,
     q(sb.from('materyaller').select('*').eq('ders_kodu', kod).eq('hafta', hafta).order('olusturma')),
@@ -36,14 +36,15 @@ async function dersSayfasi(el, kod, hafta, odakGorev) {
     o ? q(sb.from('teslimler').select('id,ogrenci_id,gorev_id,durum').eq('ders_kodu', kod).eq('hafta', hafta))
       : q(sb.from('teslimler').select('*').eq('ogrenci_id', S.ben.id).eq('ders_kodu', kod).eq('hafta', hafta)),
     o ? [] : q(sb.from('teslim_istisna').select('*').eq('ders_kodu', kod).eq('hafta', hafta)),
-    q(sb.from('ek_gorevler').select('*').eq('ders_kodu', kod).eq('hafta', hafta).order('olusturma'))
+    q(sb.from('ek_gorevler').select('*').eq('ders_kodu', kod).eq('hafta', hafta).order('olusturma')),
+    sb.from('kitaplar').select('*').eq('ders_kodu', kod).maybeSingle().then(r => r.data || null, () => null)   // tablo yoksa düğme çıkmaz
   ]);
   if (!kayit) { el.innerHTML = '<div class="kart">Bu hafta için içerik yok.</div>'; return; }
   const ic = kayit.icerik, oi = (ogr && ogr.icerik) || {};
   const sonTeslim = haftaSonTeslim(kod, hafta, kayit.son_teslim);
   const ekSure = istisna.filter(i => new Date(i.bitis) > new Date()).map(i => new Date(i.bitis)).sort((a, b) => b - a)[0];
   const acik = o || new Date() <= sonTeslim || !!ekSure;
-  const D = { kod, hafta, d, ic, oi, teslimler, acik, sonTeslim, ekSure, ek: ekler };
+  const D = { kod, hafta, d, ic, oi, teslimler, acik, sonTeslim, ekSure, ek: ekler, kitap };
   S._ders = D;
 
   el.style.setProperty('--ders', d.renk);
@@ -51,7 +52,8 @@ async function dersSayfasi(el, kod, hafta, odakGorev) {
     (o ? '<button class="btn kucuk" id="projBtn">⛶ Projeksiyon</button>' + (moderator(d) ? '<button class="btn kucuk" id="duzBtn">✏️ İçeriği düzenle</button>' : '') + '<button class="btn kucuk" id="matBtn">+ Örnek / dosya</button><button class="btn kucuk" id="odevBtn">+ Uygulama / ödev ekle</button>' + (moderator(d) ? '<button class="btn kucuk" id="sureBtn">⏰ Teslim süresi</button>' : '') + '<a class="btn kucuk" href="#/durum/' + kod + '/' + hafta + '">📊 Sınıf durumu</a>' : '') + '</div>';
 
   h += '<div class="ders-bas"><div class="ust-satir">' + esc(d.sinif) + ' · ' + esc(d.ad) + (ic.unite ? ' · ' + esc(ic.unite) : '') + '</div>' +
-    '<h1>' + esc(ic.konu || '') + '</h1>' + (ic.hedef ? '<div class="hedef">🎯 ' + bicim(ic.hedef) + '</div>' : '') +
+    '<h1>' + esc(ic.konu || '') + '</h1>' + (ic.kitapSayfa ? (kitap ? '<button class="kitap-cip kitap-btn" data-kitap="' + ic.kitapSayfa.bas + '">' : '<span class="kitap-cip">') + '📖 ' + (kitap ? 'Kitabı aç · ' : 'Kitap ') + 's. ' + ic.kitapSayfa.bas + (ic.kitapSayfa.son && ic.kitapSayfa.son !== ic.kitapSayfa.bas ? '-' + ic.kitapSayfa.son : '') + (kitap ? '</button>' : '</span>') : '') +
+    (ic.hedef ? '<div class="hedef">🎯 <b>Ne öğreneceksin:</b> ' + bicim(ic.hedef) + '</div>' : '') +
     (d.proje_aciklama ? '<div class="proje-rozet"><b>Yıl boyu proje:</b> ' + esc(d.proje_aciklama) + '</div>' : '') +
     '<div class="mini" style="color:#fff;opacity:.9;margin-top:8px">' + hafta + '. hafta' + (ic.tarih ? ' · ' + esc(ic.tarih) : '') + (ic.sure ? ' · ' + esc(ic.sure) : '') +
     ' · Son teslim: <b>' + tarihYaz(sonTeslim, true) + '</b>' + (ekSure ? ' (sana ek süre: ' + tarihYaz(ekSure, true) + ')' : '') + (kayit.yayinda ? '' : ' · TASLAK (öğrenciler görmüyor)') + '</div></div>';
@@ -60,6 +62,7 @@ async function dersSayfasi(el, kod, hafta, odakGorev) {
 
   if (!acik) h += '<div class="kilit" style="margin-top:14px">🔒 Bu haftanın teslim süresi ' + tarihYaz(sonTeslim, true) + ' tarihinde doldu. Yine de içeriği çalışabilirsin. Ek süre için öğretmenine yaz.</div>';
 
+  if (o && oi.kazanim) h += '<div class="ogretmen-not"><h3>Yıllık plan kazanımı (sadece öğretmenler görür)</h3><p style="margin:6px 0 0"><b>' + bicim(oi.kazanim.plan || '') + '</b></p>' + (oi.kazanim.aciklama ? '<p style="margin:4px 0 0">' + bicim(oi.kazanim.aciklama) + '</p>' : '') + '</div>';
   if (o && oi.akis) h += '<div class="ogretmen-not"><h3>Ders akışı (sadece öğretmenler görür)</h3><ul style="margin:6px 0 0;padding-left:20px">' + oi.akis.map(a => '<li>' + bicim(a) + '</li>').join('') + '</ul></div>';
   if (o && oi.ogretmen && oi.ogretmen.length) h += '<div class="ogretmen-not"><h3>Öğretmen yapılacakları</h3><ul style="margin:6px 0 0;padding-left:20px">' + oi.ogretmen.map(a => '<li>' + bicim(a.metin) + '</li>').join('') + '</ul></div>';
 
@@ -82,25 +85,25 @@ async function dersSayfasi(el, kod, hafta, odakGorev) {
   if (ic.isinma) h += '<div class="isinma"><b>💬 Isınma:</b><span>' + bicim(ic.isinma) + '</span></div>';
 
   if (ic.teori && ic.teori.length) {
-    h += '<h2>Kısaca bilgi</h2><div class="izgara uc">';
+    h += '<h2>Öğren</h2><div class="izgara uc">';
     ic.teori.forEach((t, i) => {
       h += '<div class="kart teori-kart' + (t.sema || t.not ? ' sema-var' : '') + '"><h3><span class="no">' + (i + 1) + '</span>' + esc(t.baslik) + '</h3>' + (t.metin ? '<p>' + bicim(t.metin) + '</p>' : '') + semaHtml(t) + (t.kod ? '<pre>' + esc(t.kod) + '</pre>' : '') + '</div>';
     });
     h += '</div>';
   }
 
+  // Birlikte yapalım: öğretmenin tahtada göstereceği kitap örneği (sadece öğretmen)
+  const gs = o && oi.goster ? Object.values(oi.goster) : [];
+  if (gs.length) h += '<h2>Birlikte yapalım <span class="mini">tahtada göster, öğrenciler izlesin</span></h2>' + gs.map(gosterKart).join('');
   const gl = gorevListesi(ic, D.ek);
-  if (gl.length) {
-    h += '<h2>Uygulamalar</h2>';
-    gl.forEach((g, i) => {
-      if (o && oi.goster && oi.goster[g.id]) h += gosterKart(oi.goster[g.id]);
-      h += gorevKart(D, g, i);
-    });
-  }
+  const bolum = (baslik, alt, l) => { if (l.length) h += '<h2>' + baslik + (alt ? ' <span class="mini">' + alt + '</span>' : '') + '</h2>' + l.map(g => gorevKart(D, g)).join(''); };
+  bolum('Sıra sende', 'derste yap, teslim et', gl.filter(g => !g.bonus && g.tur !== 'odev'));
+  bolum('Evde', 'ödev', gl.filter(g => !g.bonus && g.tur === 'odev'));
+  bolum('Bonus', 'istersen', gl.filter(g => g.bonus));
 
   if (ic.test && ic.test.length) {
-    h += '<h2>Kendini dene</h2><div class="kart" id="testKutu">' + ic.test.map((qq, qi) => '<div class="soru" data-q="' + qi + '"><b>' + (qi + 1) + '. ' + bicim(qq.soru) + '</b>' +
-      qq.secenekler.map((s, si) => '<button class="secenek" data-qi="' + qi + '" data-si="' + si + '">' + esc(s) + '</button>').join('') + '<div class="aciklama"></div></div>').join('') + '<div id="testSonuc" class="mini"></div></div>';
+    h += '<h2>Kendini dene</h2><div class="kart" id="testKutu">' + ic.test.map((qq, qi) => '<div class="soru" data-q="' + qi + '"><b>' + (qi + 1) + '. ' + bicim(qq.soru) + '</b>' + (qq.gorsel ? '<div class="mini">🖼️ ' + bicim(qq.gorsel) + '</div>' : '') +
+      qq.secenekler.map((s, si) => '<button class="secenek" data-qi="' + qi + '" data-si="' + si + '">' + 'ABCDE'[si] + ') ' + esc(s) + '</button>').join('') + '<div class="mini soru-kaynak">' + (qq.kaynak ? esc(qq.kaynak) : qq.kitapSayfa ? 'Kitap s. ' + esc(qq.kitapSayfa) + (qq.no ? ' · Soru ' + esc(qq.no) : '') : '') + '</div><div class="aciklama"></div></div>').join('') + '<div id="testSonuc" class="mini"></div></div>';
   }
   el.innerHTML = h;
   baglaDers(el, D);
@@ -112,12 +115,12 @@ function gosterKart(g) {
     '<ol class="adimlar" style="margin-top:8px">' + (g.adimlar || []).map(a => '<li>' + bicim(a) + '</li>').join('') + '</ol>' + (g.kod ? '<pre>' + esc(g.kod) + '</pre><button class="btn kucuk" data-kopyala="' + esc(g.kod) + '">Kopyala</button>' : '') + '</details>';
 }
 
-function gorevKart(D, g, i) {
+function gorevKart(D, g) {
   const o = ogretmen(), anahtar = D.kod + '|' + D.hafta + '|' + g.id;
   const t = o ? null : D.teslimler.find(x => x.gorev_id === g.id);
   const durum = t ? t.durum : 'bos';
-  let h = '<div class="kart gorev" id="gorev-' + esc(g.id) + '"><div class="gorev-bas"><div class="gno"' + (g.bonus ? ' style="background:#1f2328;color:#ffd166"' : '') + '>' + (g.bonus ? '⭐' : i + 1) + '</div><h3>' + esc(g.baslik) + '</h3>' +
-    (g.sure ? '<span class="cip bos">⏱ ' + esc(g.sure) + '</span>' : '') + (g.tur === 'odev' ? '<span class="cip turuncu">Ödev</span>' : '') +
+  let h = '<div class="kart gorev" id="gorev-' + esc(g.id) + '"><div class="gorev-bas"><div class="gno"' + (g.bonus ? ' style="background:#1f2328;color:#ffd166"' : g.tur === 'odev' ? ' style="background:#ea7a1a"' : '') + '>' + esc(g.etiket || '') + '</div><h3>' + esc(g.baslik) + '</h3>' +
+    (g.sure ? (D.kitap && /^Kitap s\. *\d+/.test(g.sure) ? '<button class="cip bos kitap-btn" data-kitap="' + g.sure.match(/\d+/)[0] + '">📖 Takılırsan: ' + esc(g.sure) + '</button>' : '<span class="cip bos">' + (/^Kitap/.test(g.sure) ? '📖 Takılırsan: ' : '⏱ ') + esc(g.sure) + '</span>') : '') + (g.kaynak ? '<span class="cip bos">' + esc(g.kaynak) + '</span>' : '') + (g.tur === 'odev' ? '<span class="cip turuncu">Ödev</span>' : '') +
     (g.ek ? '<span class="cip bos" title="Öğretmen ekledi">👩‍🏫 ' + esc(adi(g.ek.olusturan)) + (g.ek.hedef_grup ? ' · ' + esc(g.ek.hedef_grup) + ' grubu' : '') + '</span>' : '');
   if (o && g.ek && (g.ek.olusturan === S.ben.id || yonetici())) h += '<button class="btn kucuk hayalet" data-ekduz="' + g.ek.id + '" title="Düzenle">✏️</button><button class="btn kucuk hayalet" data-eksil="' + g.ek.id + '" title="Sil">🗑</button>';
   if (o) {
@@ -128,7 +131,7 @@ function gorevKart(D, g, i) {
   h += '</div>';
   const glink = g.link && /^https?:\/\//i.test(String(g.link.url || '')) ? g.link : null;
   h += '<div class="gorev-ic"><div>' + (glink ? '<a class="btn kucuk" style="margin-bottom:10px;background:#fff7e6;border-color:#f59e0b" href="' + esc(glink.url) + '" target="_blank" rel="noopener">▶ ' + esc(glink.baslik || 'Kaynağı aç') + '</a>' : '') +
-    '<ol class="adimlar">' + (g.adimlar || []).map(a => '<li>' + bicim(a) + '</li>').join('') + '</ol>' + (g.kod ? '<pre>' + esc(g.kod) + '</pre>' : '') + (g.ipucu ? '<div class="ipucu">💡 ' + bicim(g.ipucu) + '</div>' : '') + '</div>';
+    (g.aciklama ? '<p style="margin:0 0 8px">' + bicim(g.aciklama) + '</p>' : '') + '<ol class="adimlar">' + (g.adimlar || []).map(a => '<li>' + bicim(a) + '</li>').join('') + '</ol>' + (g.kod && o ? '<pre>' + esc(g.kod) + '</pre>' : '') + (g.ipucu ? '<div class="ipucu">💡 ' + bicim(g.ipucu) + '</div>' : '') + '</div>';
   h += '<div class="birak-alan"><div class="kanit"><b>Ne yükleyeceksin?</b>' + bicim(g.kanit || 'Yaptığın çalışmanın ekran görüntüsü.') + '</div>';
   if (o) h += '<a class="btn kucuk" href="#/durum/' + D.kod + '/' + D.hafta + '">Sınıf durumunu gör →</a>';
   else if (durum === 'onaylandi') {
@@ -166,6 +169,13 @@ function baglaDers(el, D) {
   });
   $$('[data-kopyala]', el).forEach(b => b.onclick = () => { navigator.clipboard.writeText(b.dataset.kopyala).then(() => tost('Kopyalandı')); });
   $$('[data-goster]', el).forEach(b => b.onclick = () => teslimGoster(b.dataset.goster));
+  // Kitabı ilgili sayfada aç (PDF görüntüleyicisi #page ile o sayfaya gider)
+  $$('[data-kitap]', el).forEach(b => b.onclick = async () => {
+    const k = D.kitap; if (!k) return;
+    const w = window.open('', '_blank');
+    try { const url = await imzaliUrl('kitaplar', k.dosya_yolu, 7200); const s = Number(b.dataset.kitap) + (k.sayfa_farki || 0); if (w) w.location = url + '#page=' + s; else location.href = url + '#page=' + s; }
+    catch (e) { if (w) w.close(); tost('Kitap açılamadı: PDF henüz yüklenmemiş olabilir.', true); }
+  });
   $$('[data-mat]', el).forEach(b => b.onclick = async () => { try { window.open(await imzaliUrl('materyal', b.dataset.mat), '_blank'); } catch (e) { hata(e); } });
   $$('[data-matsil]', el).forEach(b => b.onclick = async () => { if (!confirm('Bu materyal silinsin mi?')) return; try { await q(sb.from('materyaller').delete().eq('id', b.dataset.matsil)); yenidenCiz(); } catch (e) { hata(e); } });
   // yükleme
@@ -227,12 +237,12 @@ async function dosyaIsle(file, anahtar) {
     const f = await gorselKucult(file);
     S.onizleme[anahtar] = { tur: 'gorsel', dosya: f, url: URL.createObjectURL(f) };
   } else return tost('Lütfen bir resim seç.', true);
-  const gid = anahtar.split('|')[2], acik = ($('#ac-' + gid) || {}).value;
+  const gid = anahtar.split('|')[2], acik = (document.getElementById('ac-' + gid) || {}).value;
   const gl = gorevListesi(S._ders.ic, S._ders.ek), i = gl.findIndex(x => x.id === gid), g = gl[i];
   const eski = document.getElementById('gorev-' + gid), yeni = document.createElement('div');
   yeni.innerHTML = gorevKart(S._ders, g, i); eski.replaceWith(yeni.firstChild);
   baglaDers(document.getElementById('gorev-' + gid).parentNode, S._ders);
-  if (acik != null && $('#ac-' + gid)) $('#ac-' + gid).value = acik;
+  if (acik != null && document.getElementById('ac-' + gid)) document.getElementById('ac-' + gid).value = acik;
   const b = document.querySelector('.birak[data-anahtar="' + anahtar + '"]'); if (b) { b.focus({ preventScroll: true }); b._tiklandi = true; }
   tost(S.onizleme[anahtar].tur === 'video' ? 'Video hazır. İzleyip kontrol et, sonra "Gönder"e bas.' : 'Görsel hazır. Şimdi "Gönder"e bas.');
 }
@@ -246,7 +256,7 @@ async function gonder(D, gid, btn) {
     const yol = S.ben.id + '/' + D.kod + '/H' + D.hafta + '_' + gid + '_' + Date.now() + '.' + uz;
     await dosyaYukle('teslimler', yol, on.dosya);
     const eski = D.teslimler.find(x => x.gorev_id === gid);
-    const v = { dosya_yolu: yol, medya: on.tur, aciklama: ($('#ac-' + gid) || {}).value || null };
+    const v = { dosya_yolu: yol, medya: on.tur, aciklama: (document.getElementById('ac-' + gid) || {}).value || null };
     let t;
     if (eski) {
       t = await q(sb.from('teslimler').update(v).eq('id', eski.id).select().single());
@@ -327,9 +337,9 @@ export async function inceleme(el, p) {
     const e = ekler.find(x => x.ders_kodu === t.ders_kodu && x.hafta === t.hafta && x.kimlik === t.gorev_id);
     if (e) return '👩‍🏫 ' + e.baslik + ' (' + adi(e.olusturan) + ')';
     if (t.is_id) { const i = isler.find(x => x.id === t.is_id); return '📌 ' + (i ? i.baslik : 'İş'); }
-    if (t.gorev_id === 'BONUS') { const c = icerik.find(x => x.ders_kodu === t.ders_kodu && x.hafta === t.hafta); return '⭐ Bonus' + (c && c.bonus ? ' · ' + c.bonus.baslik : ''); }
+    if (bonusMu(t.gorev_id)) { const c = icerik.find(x => x.ders_kodu === t.ders_kodu && x.hafta === t.hafta); return '⭐ Bonus' + (c && c.bonus ? ' · ' + c.bonus.baslik : ''); }
     const c = icerik.find(x => x.ders_kodu === t.ders_kodu && x.hafta === t.hafta), g = c && (c.gorevler || []).find(x => x.id === t.gorev_id);
-    return t.gorev_id + (g ? ' · ' + g.baslik : '');
+    return t.hafta + '. hafta · ' + (g ? g.baslik : t.gorev_id);
   };
   const n = k => sayac.filter(x => k === 'isler' ? x.is_id : x.ders_kodu === k).length;
   let h = '<h1>İnceleme</h1><div class="filtre" style="margin-top:12px">' + [['hepsi', 'Tümü (' + sayac.length + ')']].concat(S.dersler.map(d => [d.kod, d.sinif + ' ' + d.ad + (n(d.kod) ? ' (' + n(d.kod) + ')' : '')]), [['isler', 'Ödev ve işler' + (n('isler') ? ' (' + n('isler') + ')' : '')]])
@@ -399,7 +409,7 @@ export async function durum(el, p) {
   const son = haftaSonTeslim(kod, hafta, (hs.find(x => x.hafta === hafta) || {}).son_teslim);
   h += '<div class="bas-satir" style="margin-top:6px"><h2 style="margin:0;color:' + d.renk + ';flex:1">' + esc(d.sinif) + ' · ' + esc(ic.konu) + '</h2><span class="mini">Son teslim: <b>' + tarihYaz(son, true) + '</b></span><button class="btn kucuk" id="sinifSure">⏰ Sınıfa ek süre</button></div>';
   h += '<div class="alt" style="margin-bottom:10px">Hücreye tıkla: teslimi aç, onayla ya da düzeltme iste. İsme tıkla: öğrencinin sayfası. ⏰: öğrenciye ek süre.</div>';
-  h += '<div class="tablo-sar"><table class="durum"><thead><tr><th>#</th><th>Öğrenci</th>' + gl.map(g => '<th title="' + esc(g.baslik) + (g.ek ? ' · ' + adi(g.ek.olusturan) + (g.ek.hedef_grup ? ' · ' + g.ek.hedef_grup + ' grubu' : '') : '') + '">' + (g.bonus ? '⭐' : esc(g.id)) + '</th>').join('') + '<th>Onay</th><th></th></tr></thead><tbody>';
+  h += '<div class="tablo-sar"><table class="durum"><thead><tr><th>#</th><th>Öğrenci</th>' + gl.map(g => '<th title="' + esc(g.baslik) + (g.ek ? ' · ' + adi(g.ek.olusturan) + (g.ek.hedef_grup ? ' · ' + g.ek.hedef_grup + ' grubu' : '') : '') + '">' + esc(g.etiket) + '</th>').join('') + '<th>Onay</th><th></th></tr></thead><tbody>';
   const sut = gl.map(() => 0);
   ogr.forEach((o, i) => {
     let onay = 0;
@@ -418,13 +428,13 @@ export async function durum(el, p) {
   el.innerHTML = h;
   $$('[data-t]', el).forEach(c => c.onclick = () => {
     const t = ts.find(x => x.id === c.dataset.t), g = gl.find(x => x.id === t.gorev_id);
-    const m = modal('<div style="padding:0">' + incelemeKart(t, t.gorev_id + ' · ' + (g ? g.baslik : '')) + '</div>');
+    const m = modal('<div style="padding:0">' + incelemeKart(t, (g ? g.etiket + ' · ' + g.baslik : t.gorev_id)) + '</div>');
     incelemeBagla(m, [t], () => { modalKapat(); durum(el, p); });
   });
   $$('[data-ek]', el).forEach(b => b.onclick = () => ekSure(kod, hafta, b.dataset.ek, () => durum(el, p)));
   $('#sinifSure').onclick = () => ekSure(kod, hafta, null, () => durum(el, p));
   $('#csvBtn').onclick = () => csvIndir(d.sinif + '_' + kod + '_H' + hafta + '.csv',
-    [['No', 'Ad', 'Soyad'].concat(gl.map(g => g.id + ' ' + g.baslik))].concat(ogr.map(o => [o.kullanici, o.ad, o.soyad].concat(gl.map(g => { const t = ts.find(x => x.ogrenci_id === o.id && x.gorev_id === g.id); return DURUM_AD[t ? t.durum : 'bos']; })))));
+    [['No', 'Ad', 'Soyad'].concat(gl.map(g => g.etiket + ' ' + g.baslik))].concat(ogr.map(o => [o.kullanici, o.ad, o.soyad].concat(gl.map(g => { const t = ts.find(x => x.ogrenci_id === o.id && x.gorev_id === g.id); return DURUM_AD[t ? t.durum : 'bos']; })))));
 }
 
 async function donemToplam(el, h, kod, d, hs) {
@@ -444,8 +454,8 @@ async function donemToplam(el, h, kod, d, hs) {
       const hh = hs.filter(x => x.hafta >= ar[0] && x.hafta <= ar[1]);
       const top = hh.reduce((s, x) => s + (x.icerik.gorevler || []).length, 0) +
         ekler.filter(e => e.hafta >= ar[0] && e.hafta <= ar[1] && (!e.hedef_grup || e.hedef_grup === o.grup)).length;
-      const onay = ts.filter(t => t.ogrenci_id === o.id && t.durum === 'onaylandi' && t.gorev_id !== 'BONUS' && t.hafta >= ar[0] && t.hafta <= ar[1]).length;
-      const bon = ts.filter(t => t.ogrenci_id === o.id && t.durum === 'onaylandi' && t.gorev_id === 'BONUS' && t.hafta >= ar[0] && t.hafta <= ar[1]).length;
+      const onay = ts.filter(t => t.ogrenci_id === o.id && t.durum === 'onaylandi' && !bonusMu(t.gorev_id) && t.hafta >= ar[0] && t.hafta <= ar[1]).length;
+      const bon = ts.filter(t => t.ogrenci_id === o.id && t.durum === 'onaylandi' && bonusMu(t.gorev_id) && t.hafta >= ar[0] && t.hafta <= ar[1]).length;
       const bt = hh.filter(x => x.icerik.bonus).length, puan = top ? Math.round(onay / top * 100) : '';
       h += '<td>' + onay + '/' + top + '</td><td><b>' + puan + '</b></td><td class="mini">' + bon + '/' + bt + '</td>';
       sat.push(onay + '/' + top, puan, bon + '/' + bt);
@@ -548,7 +558,7 @@ async function icerikDuzenle(kod, hafta, sonra) {
     '<div class="form-izgara"><label class="alan"><span>Ders</span><select name="kod" ' + (yeni ? '' : 'disabled') + '>' + secenekler(S.dersler.map(d => [d.kod, d.sinif + ' ' + d.ad]), kod) + '</select></label>' +
     '<label class="alan"><span>Hafta</span><input type="number" name="hafta" min="1" max="45" value="' + (hafta || S.hafta) + '" ' + (yeni ? '' : 'disabled') + '></label>' +
     '<label class="alan" style="align-self:end"><span></span><label class="satir"><input type="checkbox" name="yayinda" ' + (yayinda ? 'checked' : '') + '> Yayında (öğrenciler görür)</label></label></div>' +
-    '<div class="kilit" style="background:#eef3ff;color:#1e3a8a">Görev kimlikleri (G1, G2…) <b>değiştirilmez ve silinmez</b>: öğrenci teslimleri bunlara bağlı. Metinleri serbestçe düzelt. Yeni görev = yeni kimlik.</div>' +
+    '<div class="kilit" style="background:#eef3ff;color:#1e3a8a">Görev kimlikleri kitaba bağlıdır (U1.2 = 1. ünite 2. Uygulama, SS-s24 = s. 24 Sıra Sizde) ve <b>değiştirilmez, silinmez</b>: öğrenci teslimleri bunlara bağlı. Metinleri serbestçe düzelt. Öğrenci sayfada G1, Ö1 görür.</div>' +
     '<div class="izgara iki"><label class="alan"><span>Öğrencinin gördüğü kısım (konu, hedef, teori, gorevler, bonus, test, odevler)</span><textarea class="json-alan" name="ogr">' + esc(JSON.stringify(ogr, null, 2)) + '</textarea></label>' +
     '<label class="alan"><span>Sadece öğretmen (akis, ogretmen, goster)</span><textarea class="json-alan" name="ogrt">' + esc(JSON.stringify(ogrt, null, 2)) + '</textarea></label></div>' +
     '<div class="satir"><button class="btn ana">Kaydet</button><span class="mini">Kayıt anında yayına girer.</span></div></form>');
